@@ -1,0 +1,5 @@
+{
+  "name": "LottoStat Predictor",
+  "description": "A mathematical and statistical analysis tool for lottery results, featuring frequency tracking, hot/cold number analysis, and probability-based predictions.",
+  "requestFramePermissions": []
+}

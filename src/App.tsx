@@ -41,6 +41,7 @@ export default function App() {
   const [newBonusNumbers, setNewBonusNumbers] = useState<string>('');
   const [newDate, setNewDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [prediction, setPrediction] = useState<{ main: number[], bonus: number[] }>({ main: [], bonus: [] });
+  const [storedPredictions, setStoredPredictions] = useState<{ id: string, category: LottoCategory, date: string, main: number[], bonus: number[] }[]>([]);
   const [activeTab, setActiveTab] = useState<'stats' | 'history' | 'predict'>('stats');
   const [isFetching, setIsFetching] = useState(false);
 
@@ -48,9 +49,13 @@ export default function App() {
 
   // Load data
   useEffect(() => {
-    const saved = localStorage.getItem('lotto_results_v2');
-    if (saved) {
-      setResults(JSON.parse(saved));
+    const savedResults = localStorage.getItem('lotto_results_v2');
+    if (savedResults) {
+      setResults(JSON.parse(savedResults));
+    }
+    const savedPredictions = localStorage.getItem('lotto_stored_predictions');
+    if (savedPredictions) {
+      setStoredPredictions(JSON.parse(savedPredictions));
     }
   }, []);
 
@@ -60,6 +65,10 @@ export default function App() {
       localStorage.setItem('lotto_results_v2', JSON.stringify(results));
     }
   }, [results]);
+
+  useEffect(() => {
+    localStorage.setItem('lotto_stored_predictions', JSON.stringify(storedPredictions));
+  }, [storedPredictions]);
 
   const stats = useMemo(() => calculateStats(results, config), [results, currentCategory]);
 
@@ -96,7 +105,28 @@ export default function App() {
   };
 
   const handleGeneratePrediction = () => {
-    setPrediction(generatePrediction(stats, config));
+    const newPred = generatePrediction(stats, config);
+    setPrediction(newPred);
+    
+    // Automatically store the generated prediction
+    const storedPred = {
+      id: Date.now().toString(),
+      category: currentCategory,
+      date: new Date().toLocaleString(),
+      main: newPred.main,
+      bonus: newPred.bonus
+    };
+    setStoredPredictions(prev => [storedPred, ...prev].slice(0, 50)); // Keep last 50
+  };
+
+  const handleDeleteStoredPrediction = (id: string) => {
+    setStoredPredictions(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleClearStoredPredictions = () => {
+    if (confirm('Clear all stored predictions?')) {
+      setStoredPredictions([]);
+    }
   };
 
   const handleFetchLatest = async () => {
@@ -518,6 +548,61 @@ export default function App() {
                     <RefreshCw className="w-5 h-5" />
                     Run Simulation
                   </button>
+                </section>
+
+                {/* Stored Predictions Box */}
+                <section className="border border-[#141414] p-6 bg-white/30">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xs font-mono uppercase tracking-widest opacity-50 flex items-center gap-2">
+                      <History className="w-3 h-3" />
+                      Stored Predictions History
+                    </h2>
+                    {storedPredictions.length > 0 && (
+                      <button 
+                        onClick={handleClearStoredPredictions}
+                        className="text-[10px] font-mono uppercase opacity-40 hover:opacity-100 transition-opacity"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {storedPredictions.length > 0 ? (
+                      storedPredictions.map((pred) => (
+                        <div key={pred.id} className="border border-[#141414]/10 p-4 bg-white/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-[10px] font-mono uppercase opacity-40">{pred.date}</span>
+                              <span className="text-[10px] font-mono uppercase bg-[#141414] text-[#E4E3E0] px-1.5 py-0.5">{LOTTO_CONFIGS[pred.category]?.name}</span>
+                            </div>
+                            <div className="flex gap-1 flex-wrap">
+                              {pred.main.map((n, i) => (
+                                <span key={i} className="w-8 h-8 border border-[#141414] flex items-center justify-center text-xs font-mono bg-white">
+                                  {n}
+                                </span>
+                              ))}
+                              {pred.bonus.map((n, i) => (
+                                <span key={i} className="w-8 h-8 border border-[#141414] flex items-center justify-center text-xs font-mono bg-amber-200">
+                                  {n}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteStoredPrediction(pred.id)}
+                            className="text-red-600 hover:bg-red-50 p-2 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 opacity-30 font-mono text-[10px] uppercase tracking-widest">
+                        No predictions stored yet
+                      </div>
+                    )}
+                  </div>
                 </section>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

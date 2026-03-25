@@ -87,8 +87,8 @@ export const calculateStats = (results: LottoResult[], config: LottoConfig): Lot
 };
 
 export const generatePrediction = (stats: LottoStats, config: LottoConfig): { main: number[], bonus: number[] } => {
-  const predictSet = (numStats: NumberStat[], count: number) => {
-    if (stats.totalDraws < 3) {
+  const predictSet = (numStats: NumberStat[], count: number, isMain: boolean) => {
+    if (stats.totalDraws < 5) {
       const nums = new Set<number>();
       const max = numStats.length;
       while (nums.size < count) {
@@ -97,23 +97,77 @@ export const generatePrediction = (stats: LottoStats, config: LottoConfig): { ma
       return Array.from(nums).sort((a, b) => a - b);
     }
 
+    // Create a weighted pool
     const pool: number[] = [];
     numStats.forEach(stat => {
-      for (let i = 0; i < stat.frequency; i++) pool.push(stat.number);
-      for (let i = 0; i < Math.floor(stat.lastSeen / 2); i++) pool.push(stat.number);
-      pool.push(stat.number);
+      // Weight by frequency (Hot numbers)
+      const freqWeight = Math.max(1, stat.frequency);
+      // Weight by "overdue" factor (Cold/Overdue numbers)
+      const overdueWeight = Math.floor(stat.lastSeen / 1.5);
+      
+      const totalWeight = freqWeight + overdueWeight + 2;
+      for (let i = 0; i < totalWeight; i++) pool.push(stat.number);
     });
 
-    const prediction = new Set<number>();
-    while (prediction.size < count) {
-      const randomIndex = Math.floor(Math.random() * pool.length);
-      prediction.add(pool[randomIndex]);
+    // Generate multiple candidates and score them
+    const candidates: { set: number[], score: number }[] = [];
+    const maxCandidates = 100;
+
+    for (let c = 0; c < maxCandidates; c++) {
+      const currentSet = new Set<number>();
+      while (currentSet.size < count) {
+        const randomIndex = Math.floor(Math.random() * pool.length);
+        currentSet.add(pool[randomIndex]);
+      }
+      const sortedSet = Array.from(currentSet).sort((a, b) => a - b);
+      
+      // Scoring logic (only for main balls)
+      let score = 0;
+      if (isMain) {
+        // 1. Sum Range Check
+        const sum = sortedSet.reduce((a, b) => a + b, 0);
+        const diffFromAvg = Math.abs(sum - stats.averageSum);
+        score += Math.max(0, 50 - diffFromAvg);
+
+        // 2. Odd/Even Balance (Ideal is 50/50 or close)
+        const odds = sortedSet.filter(n => n % 2 !== 0).length;
+        const evens = count - odds;
+        const oddEvenDiff = Math.abs(odds - evens);
+        score += (count - oddEvenDiff) * 10;
+
+        // 3. High/Low Balance
+        const midPoint = config.maxMain / 2;
+        const lows = sortedSet.filter(n => n <= midPoint).length;
+        const highs = count - lows;
+        const highLowDiff = Math.abs(lows - highs);
+        score += (count - highLowDiff) * 10;
+
+        // 4. Consecutive Numbers (1 pair is okay, more is rare)
+        let consecutives = 0;
+        for (let i = 0; i < sortedSet.length - 1; i++) {
+          if (sortedSet[i+1] - sortedSet[i] === 1) consecutives++;
+        }
+        if (consecutives === 1) score += 15;
+        else if (consecutives === 0) score += 10;
+        else score -= 20;
+
+        // 5. Last Digit Diversity
+        const lastDigits = new Set(sortedSet.map(n => n % 10));
+        score += lastDigits.size * 5;
+      } else {
+        score = Math.random(); // Random for bonus
+      }
+
+      candidates.push({ set: sortedSet, score });
     }
-    return Array.from(prediction).sort((a, b) => a - b);
+
+    // Return the best candidate
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].set;
   };
 
   return {
-    main: predictSet(stats.numberStats, config.mainBalls),
-    bonus: stats.bonusStats ? predictSet(stats.bonusStats, config.bonusBalls) : []
+    main: predictSet(stats.numberStats, config.mainBalls, true),
+    bonus: stats.bonusStats ? predictSet(stats.bonusStats, config.bonusBalls, false) : []
   };
 };
